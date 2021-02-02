@@ -1,0 +1,8 @@
+{
+    "connectionLimit" : 10,
+    "host"     : "localhost",
+    "user"     : "user",
+    "password" : "password",
+    "database" : "placmpt",
+    "multipleStatements": true
+}

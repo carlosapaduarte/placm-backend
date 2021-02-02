@@ -1,0 +1,86 @@
+[{
+    "type": "Tag",
+    "name": "Health",
+    "data1": "",
+    "data2": "",
+    "data3": ""
+  },
+  {
+    "type": "Tag",
+    "name": "Justice",
+    "data1": "",
+    "data2": "",
+    "data3": ""
+  },
+  {
+    "type": "Tag",
+    "name": "Culture",
+    "data1": "",
+    "data2": "",
+    "data3": ""
+  },
+  {
+    "type": "Tag",
+    "name": "Media",
+    "data1": "",
+    "data2": "",
+    "data3": ""
+  },
+  {
+    "type": "EvaluationTool",
+    "name": "Jupiter",
+    "data1": "https://www.jupiter.proto.org/",
+    "data2": "The biggest planet in the Solar System",
+    "data3": "1.0.0"
+  },
+  {
+    "type": "EvaluationTool",
+    "name": "Mercury",
+    "data1": "https://www.mercury.proto.org/",
+    "data2": "The smallest planet in the Solar System",
+    "data3": "1.0.0"
+  },
+  {
+    "type": "EvaluationTool",
+    "name": "Earth",
+    "data1": "https://www.earth.proto.org/",
+    "data2": "Our planet in the Solar System",
+    "data3": "1.0.1"
+  },
+  {
+    "type": "Rule",
+    "name": "Button has accessible name",
+    "data1": "https://act-rules.github.io/rules/97a4e1",
+    "data2": "This rule checks that each button element has an accessible name.",
+    "data3": ""
+  },
+  {
+    "type": "Rule",
+    "name": "Form control has accessible name",
+    "data1": "https://act-rules.github.io/rules/e086e5",
+    "data2": "This rule checks that each form field element has an accessible name.",
+    "data3": ""
+  },
+  {
+    "type": "Rule",
+    "name": "ARIA state or property is permitted",
+    "data1": "https://act-rules.github.io/rules/5c01ea",
+    "data2": "This rule checks that WAI-ARIA states or properties are allowed for the element they are specified on.",
+    "data3": ""
+  },
+  {
+    "type": "Rule",
+    "name": "HTML page has title",
+    "data1": "https://act-rules.github.io/rules/2779a5",
+    "data2": "This rule checks that an HTML page has a title.",
+    "data3": ""
+  },
+  {
+    "type": "Rule",
+    "name": "iframe element has accessible name",
+    "data1": "https://act-rules.github.io/rules/cae760",
+    "data2": "This rule checks that each iframe element has an accessible name.",
+    "data3": ""
+  }
+]
+  
