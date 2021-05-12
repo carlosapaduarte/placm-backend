@@ -10,7 +10,6 @@ const debug = require('debug')('placm-backend:server');
 
 import documentRouter from "./routes/admin/document";
 import dbRouter from "./routes/admin/database";
-import crawlerRouter from "./routes/admin/crawler";
 import countryRouter from "./routes/country";
 import tagRouter from './routes/tag';
 import applicationRouter from './routes/application';
@@ -35,7 +34,6 @@ app.use(expressValidator());
 
 app.use('/doc', documentRouter);
 app.use('/db', dbRouter);
-app.use('/crawler', crawlerRouter);
 app.use('/country', countryRouter);
 app.use('/tag', tagRouter);
 app.use('/application', applicationRouter);
