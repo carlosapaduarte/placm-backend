@@ -1,242 +1,269 @@
 import * as fs from 'fs';
-import { trim } from "lodash";
-import path from "path";
+import { HEADLESS_PUPPETEER, SHEET_NAMES } from '../../util/constants';
+import { IHashString } from '../../util/interfaces';
+import { deleteFolderRecursive, getDomainEntryFromURL, prepareCrawlerFiles } from '../../util/util';
 
 const Apify = require('apify');
 const excelToJson = require('convert-excel-to-json');
 const c = require('ansi-colors');
+process.env.APIFY_LOCAL_STORAGE_DIR = "./apify_storage";
 
-/* Accessibility Statements crawler, based on domains from given excel files 
- * This function does not return anything 
- * Instead logs and stores found AS and failed domains and URLs */
-async function crawl_from_excel() {
+/* ***************************** CRAWLER ************************************
+ * Accessibility Statements crawler, based on given homepages (first-level link search)
+ * This script logs and stores found AS and failed domains and URLs 
+ * ************************************************************************** */
 
-  let linksWithAS: string[][] = [];
+// file needs to be in *lib* folder and include *file extension*
+/* txt file
+   > urls are splitted by lines, with no additional information
+ * xlsx file
+   > can have multiple sheets, but sheet names need to be listed in variable 'sheet_names'
+   > sheets have 2 columns, where column A lists organization names and column B lists respective homepage URL
+   > first row of every sheet are headers (first row is ignored, must not have data)
+ * manual
+   > used to crawl single URL
+   > manually fill variable 'manual_url' below with desired URL 
+*/
+let urls_filetype = 0; // filetype: 0 - txt, 1 - xlsx, -1 - manual
+const urls_filename = 'urls.txt';
+const sheet_names = ['Sheet1'];
+const manual_url = '';
 
-  // Transforming excel into json object
-  let workbook = excelToJson({
-    sourceFile: 'lib/urls_crawler.xlsx',
-    header: {
-      rows: 1
-    },
-    columnToKey: {
-      A: 'entity',
-      B: 'old_url',
-      C: 'new_url',
-      D: 'changed',
-      E: 'test',
-    },
-    sheets: ['Mapa']
-  });
+Apify.main(async () => {
+  deleteFolderRecursive('./apify_storage');
+  prepareCrawlerFiles(urls_filetype);
 
-  let index = 0;
-  let textDocument: string;
-  let html: any;
-  let urls: string[] = [];
-  let excelLinks: string = "";
-
-  for (let sheet in workbook){
-    for (let row of workbook[sheet]){
-      //excelLinks = excelLinks + trim(row['new_url']) + '\n';
-      //excelLinks = excelLinks + trim(row['old_url']) + '\n';
-      excelLinks = excelLinks + trim(row['test']) + '\n';
-    }
-  }
-
-  /*fs.writeFile('lib/new_urls.txt', excelLinks, (err) => {
-    if (err) console.log(err);
-    console.log('New urls saved!');
-  });
-
-  let newurls: string[] | null;
-  newurls = await new Promise((resolve, reject) => {
-    fs.readFile('lib/new_urls.txt', function (err, data) {
-      if (err) {
-        resolve(null);
-      }
-      resolve(data.toString());
-    });
-  });*/
-
-  excelLinks = excelLinks.trim();
-  let splittedLinks = excelLinks.split('\n');
-  process.env.APIFY_LOCAL_STORAGE_DIR = "./apify_storage";
-  let HEADLESS_PUPPETEER = true;
+  let domainMap: IHashString = {};
   const requestQueue = await Apify.openRequestQueue('crawler');
-  for await(let link of splittedLinks){
+
+  let allLinks = prepareFileInput(domainMap);
+  
+  // Add listed links to crawler queue
+  for(let link of allLinks){
     await requestQueue.addRequest({ url: link });
   }
-  let firstPage = true;
-  let foundAS = false;
-  let mapFinishedData: IHashString = {};
-  const firstLineCSV = 'nome,declaracao,conformidade\n';
 
   const crawler = await new Apify.PuppeteerCrawler({
     requestQueue,
-    launchPuppeteerOptions: {   
-      headless: HEADLESS_PUPPETEER
-    },
-    
-    gotoFunction: async ({ page, request } : {page: any, request: any}) =>{
-      return await page.goto(request.url, {
-        waitUntil: 'networkidle2',
-        timeout: 60000
-      });
+    launchContext: {
+      launchOptions: {   
+        headless: HEADLESS_PUPPETEER
+      }
     },
     maxConcurrency: 200,
-    handlePageTimeoutSecs: 5*60,
+    handlePageTimeoutSecs: 3*60,
     handlePageFunction: async ({ page, request, response } : {page: any, request: any, response: any}) => {
       let contentType = 'text/html';
       if((await response) !== null){
         contentType = await response.headers()['content-type'];
       }
-      // accept content-type if can't read response headers
+      // Accept content-type if can't read response headers
       let validContentType = contentType === undefined ? true : (contentType.startsWith('text/html') || contentType.startsWith('text/xml'));
 
+      // Get URL's domain 
       let url = page.url();
-      let domain = url[url.length-1] === '/' ? url.substring(0,url.length-1) : url;
-      let domainSplitted = domain.split('/');
-      if(domainSplitted.length > 3){
-        domain = domainSplitted.slice(0,3).join('/');
-      }
+      let urlWithoutSlash = url.endsWith('/') ? url.slice(0,-1) : url;
 
-      let dataEntry = findDataEntry(domain, mapFinishedData);
-      //firstPage = dataEntry === '';
-      firstPage = splittedLinks.includes(request.url);
-      foundAS = firstPage ? false : (dataEntry !== '' ? mapFinishedData[dataEntry].finished : false);
-      console.log('> ' + url, foundAS ? c.bold.green(true) : c.bold.red(false), validContentType ? c.bold.green('HTML') : c.bold.red('NO_HTML'));
+      // Get domain info from domainMap
+      let domainEntry = getDomainEntryFromURL(url, domainMap);
+
+      let firstPage = domainEntry !== {} && domainEntry.firstLink;
+      let foundAS = firstPage ? false : (domainEntry !== {} ? domainEntry.finished : false);
+      console.log('► ' + url, foundAS ? c.bold.green('√') : c.bold.red('X'));
+
       if(validContentType){
         if(!foundAS){
           if (firstPage) {
-            mapFinishedData[domain] = {
-              finished: false,
-              linksRequestIds: []
-            }
-
-            // manually add /acessibilidade to find AS faster (only in Portugal)
-            let possibleASUrl = domain + '/acessibilidade';
-            await requestQueue.addRequest({ url: possibleASUrl });
-
-            /* let links = await page.$$eval('a[href]', (el: any) => el.map((x: any) => x.getAttribute("href")));
-            let absoluteUrls = links.map((link: string) => new URL(link, domain));
-            let sameDomainLinks = absoluteUrls.filter((url: { href: string; }) => url.href.startsWith(domain));
-            let req;
-            for await (let link of sameDomainLinks) {
-                req = await requestQueue.addRequest({ url: link.href });
-                mapFinishedData[url].linksRequestIds.push(req.requestId);
-            } */
-
+            let protocolAndDomain = url.split('/').slice(0,3).join('/');
             // with this pseudoUrls, only get urls in the same domain and not one of these files
-            let pseudoUrls = [new Apify.PseudoUrl(domain + '[(?!.*\.(css|jpg|jpeg|gif|svg|pdf|docx|js|png|ico|xml|mp4|mp3|mkv|wav|rss|php|json)).*]')];
+            let pseudoUrls = [new Apify.PseudoUrl(protocolAndDomain + '[(?!.*\.(css|jpg|jpeg|gif|svg|pdf|docx|js|png|ico|xml|mp4|mp3|mkv|wav|rss|php|json)).*]')];
             // enqueue existent links with page that match corresponding regex
             const infos = await Apify.utils.enqueueLinks({
               page,
               requestQueue,
               pseudoUrls
             });
-            
-            fs.appendFile('lib/crawl/400Homepages.txt', domain + '\n', (err) => {
-              if (err) console.log(err);
-            });
-
-            dataEntry = domain;
-            firstPage = false;
-          } 
+            if(!(urlWithoutSlash.includes("acessibilidade") && urlWithoutSlash.match(new RegExp("[^.]acessibilidade")))){
+              fs.appendFile('lib/crawl/firstLinks.txt', url + '\n', (err) => {
+                if (err) console.log(err);
+              });
+            }
+            domainMap[domainEntry.domain].firstLink = false;
+          }
 
           // find AS using AS generators exclusive classes (portuguese and W3)
           const elemAS = await page.$('.mr.mr-e-name,.basic-information.organization-name');
-          // find AS using h1 text (portuguese generator only)
-          const headings = await page.$$eval('H1', (elems: any) => elems.map((elem: any) => elem.textContent.toLowerCase()));
-          let validHeading = false;
-          for(let i = 0; i < headings.length && !validHeading; i++){
-            validHeading = headings[i] && headings[i].includes(('Declaração de Acessibilidade').toLowerCase());
-          }
-          if(!!elemAS || validHeading){
-            if(!!elemAS){
-              let className = await (await elemAS.getProperty("className")).jsonValue();
 
-              // if it was made with the portuguese generator, store in a different file
-              if(className && className.includes('mr-e-name')){
-                if(!fs.existsSync('lib/crawl/portugueseAS.csv') || (await readFile('lib/crawl', 'portugueseAS.csv')).trim().length === 0){
-                  fs.appendFile('lib/crawl/portugueseAS.csv', firstLineCSV, (err) => {
-                    if (err) console.log(err);
-                  });
-                }
-                let orgName = await page.$eval('.capFL [name=siteurl],.capFL .siteurl', (el: any) => el.textContent);
-                let conformance = await page.$eval('.mr.mr-conformance-status', (el: any) => el.textContent);
-                fs.appendFile('lib/crawl/portugueseAS.csv', orgName+','+request.url+','+conformance+'\n', (err) => {
-                  if (err) console.log(err);
-                });
+          /* ----- workaround to portuguese AS not using generator ----- */
+          const headings = await page.$$eval('H1,H2', (elems: any) => elems.map((elem: any) => [elem.tagName.toLowerCase(), elem.textContent.toLowerCase()]));
+          let validPortugueseHeading = false;
+          for(let i = 0; i < headings.length && !validPortugueseHeading; i++){
+            validPortugueseHeading = headings[i] && 
+              ((headings[i][0] === 'h1' && headings[i][1].trim() === 'Declaração de Acessibilidade'.toLowerCase()) ||
+              (headings[i][0] === 'h2' && headings[i][1].trim() === 'I. Estado de conformidade'.toLowerCase()));
+          }
+          /* -----                                                 ----- */
+          
+          // If found AS
+          if(!!elemAS || validPortugueseHeading){
+            let className = !!elemAS ? await (await elemAS.getProperty("className")).jsonValue() : '';
+
+            // if found AS is related to Portugal, store it in a different file
+            if((!!className && className.includes('mr-e-name')) || validPortugueseHeading){
+              let orgName = '', conformance = '';
+              if(!!className && className.includes('mr-e-name')){
+                orgName = await page.$eval('.capFL [name=siteurl],.capFL .siteurl', (el: any) => el.textContent);
+                conformance = await page.$eval('.mr.mr-conformance-status', (el: any) => el.textContent);
               }
+              // check if /acessibilidade is right after URL domain
+              let splittedUrl = url.split('/');
+              let acessibilidadeAfterDomain = splittedUrl.length > 3 && splittedUrl[3] === 'acessibilidade';
+              let correctPortugueseURL = acessibilidadeAfterDomain ? 'sim' : 'não';
+              let correctGeneratedAS = !!elemAS ? 'sim' : 'não';
+
+              let csvLine = '';
+              if(urls_filetype === 0){ // txt file
+                csvLine = orgName+','+conformance+','+url+','+correctPortugueseURL+','+correctGeneratedAS+'\n'
+              } else { // xlsx file
+                csvLine = orgName+','+conformance+','+url+','+correctPortugueseURL+','+correctGeneratedAS+','+domainEntry.entityName+','+domainEntry.sampleName+'\n';
+              }
+
+              fs.appendFile('lib/crawl/portugueseAS.csv', csvLine, (err) => {
+                if (err) console.log(err);
+              });
             }
             
             // store acessibility statemente in this file, independent of AS generator
-            mapFinishedData[dataEntry].finished = true;
-            console.log(c.bold.green(request.url));
+            domainMap[domainEntry.domain].finished = true;
+            console.log(c.bold.green('√ '+request.url));
             fs.appendFile('lib/crawl/foundAS.txt', request.url + '\n', (err) => {
               if (err) console.log(err);
             });
           }
-        } else {
-          /* // remove all urls that are in queue that belong to dataEntry domain
-          let requestsLeft = mapFinishedData[dataEntry].linksRequestIds;
-          for await(let reqId of requestsLeft){
-            let request = await requestQueue.getRequest(reqId);
-            console.log(request);
-            await requestQueue.markRequestHandled(request);
-          }
-          // delete ids to avoid excessive memory usage
-          mapFinishedData[dataEntry].linksRequestIds = []; */
-          /* let reqQueue = mapFinishedData[dataEntry].queue;
-          await reqQueue.drop(); */
         }
       }
     },
     handleFailedRequestFunction: async ({ request, error } : {request: any, error: any}) => {
-      console.log(c.bold.red(request.url));
-      fs.appendFile('lib/crawl/foundFailed.txt', request.url + '\n', (err) => {
-        if (err) console.log(err);
-      });
+      // By manually inserting /acessibilidade links, there could be detected unnecessary errors
+      // in this case, we want to avoid logging
+      let domainEntry = getDomainEntryFromURL(request.url, domainMap);
+      let urlWithoutSlash = request.url.endsWith('/') ? request.url.slice(0,-1) : request.url;
+
+      if(!(urlWithoutSlash.endsWith('/acessibilidade') && domainEntry !== {} && domainEntry.firstLink)){
+        console.log(c.bold.red('X ' + request.url));
+        fs.appendFile('lib/crawl/failedLinks.csv', request.url+','+error.message+'\n', (err) => {
+          if (err) console.log(err);
+        });
+      }
     },
   });
   let timeStart = new Date().getTime();
   await crawler.run();
   await requestQueue.drop();
   let hourDiff = new Date().getTime() - timeStart; //in ms
-  let secDiff = hourDiff / 1000; //in s
   let minDiff = hourDiff / 60 / 1000; //in minutes
   let hDiff = hourDiff / 3600 / 1000; //in hours
   let humanReadable = {hours: 0, minutes: 0};
   humanReadable.hours = Math.floor(hDiff);
-  humanReadable.minutes = minDiff - 60 * humanReadable.hours;
-  console.log(c.bold.green("CRAWLER IS OVER!"), humanReadable);
-}
+  humanReadable.minutes = Number((minDiff - 60 * humanReadable.hours).toFixed(2));
+  console.log(c.bold.green("CRAWLER FINISHED!"), humanReadable);
+});
 
-/* Return <string> index of created interface, that represents studied domain */
-function findDataEntry(url: string, map: IHashString): string {
-  for(let entry of Object.keys(map)){
-    if(url.includes(entry)){
-      return entry.toString();
-    }
-  }
-  return '';
-}
+/* This function gets all URLS from specified file
+   stores them in domainMap (IHashString{}) and allLinks (string[])
+   and returns allLinks */
+function prepareFileInput(domainMap: IHashString){
+  let url: string, removedLastSlashURL: string, domain: string;
+  let allLinks: string[] = [];
 
-/* Async read utf-8 file, given its directory and name */
-async function readFile(dirname: string, filename: string): Promise<string>{
-  return new Promise((resolve, reject) => {
-    fs.readFile(path.resolve(dirname, filename), 'utf-8', function(err, content) {
-      if (err) {
-        console.log(err);
-        return;
+  switch(urls_filetype){
+    case 0: // txt file
+      let filedata = '';
+      try {
+        filedata = fs.readFileSync('lib/'+urls_filename, 'utf8');
+      } catch (err) {
+        console.error(err);
       }
-      resolve(<string>content);
+
+      let splittedUrls = filedata.trim().split(/\r?\n/);
+      for(let url of splittedUrls){
+        removedLastSlashURL = url.endsWith('/') ? url.slice(0,-1) : url;
+        domain = url.split('/')[2];
+        if(Object.keys(getDomainEntryFromURL(url, domainMap)).length === 0){
+          domainMap[domain] = {
+            url: removedLastSlashURL,
+            domain: domain,
+            entityName: '',
+            sampleName: '',
+            firstLink: true,
+            finished: false,
+          }
+        }
+        allLinks.push(removedLastSlashURL);
+        // manually add /acessibilidade to find AS faster (only in Portugal)
+        let possibleAS = url.split('/').slice(0,3).join('/') + '/acessibilidade';
+        if(!allLinks.includes(possibleAS))
+          allLinks.push(possibleAS);
+      }
+      break;
+    case 1: // xlsx file
+    // Transforming excel into json object
+    let workbook = excelToJson({
+      sourceFile: 'lib/'+urls_filename,
+      header: {
+        rows: 1
+      },
+      columnToKey: {
+        A: 'entidade',
+        B: 'url',
+      },
+      sheets: SHEET_NAMES
     });
-  });   
+
+    // Navigate through all sheets
+    for (let sheetName in workbook){
+      for (let row of workbook[sheetName]){
+        url = row['url'];
+        removedLastSlashURL = url.endsWith('/') ? url.slice(0,-1) : url;
+        domain = url.split('/')[2];
+        allLinks.push(removedLastSlashURL);
+        // manually add /acessibilidade to find AS faster (only in Portugal)
+        let possibleAS = url.split('/').slice(0,3).join('/') + '/acessibilidade';
+        if(!allLinks.includes(possibleAS))
+          allLinks.push(possibleAS);
+        
+        if(Object.keys(getDomainEntryFromURL(url, domainMap)).length === 0){
+          domainMap[domain] = {
+            url: removedLastSlashURL,
+            domain: domain,
+            entityName: row['entidade'],
+            sampleName: sheetName,
+            firstLink: true,
+            finished: false,
+          }
+        }
+      }
+    }
+    break;
+  default: // manual
+    removedLastSlashURL = manual_url.endsWith('/') ? manual_url.slice(0,-1) : manual_url;
+    domain = manual_url.split('/')[2];
+    if(Object.keys(getDomainEntryFromURL(manual_url, domainMap)).length === 0){
+      domainMap[domain] = {
+        url: removedLastSlashURL,
+        domain: domain,
+        entityName: '',
+        sampleName: '',
+        firstLink: true,
+        finished: false,
+      }
+    }
+    allLinks.push(removedLastSlashURL);
+    // manually add /acessibilidade to find AS faster (only in Portugal)
+    let possibleAS = manual_url.split('/').slice(0,3).join('/') + '/acessibilidade';
+    if(!allLinks.includes(possibleAS))
+      allLinks.push(possibleAS);
+    break;
+  }
+  return allLinks;
 }
-
-export { crawl_from_excel };
-
-export interface IHashString {
-  [index: string]: {finished: boolean, linksRequestIds: number[]};
-} 

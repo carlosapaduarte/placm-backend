@@ -23,8 +23,15 @@ const DB_NAMES: { [key: string]: string } = {
 
 const ELEMENT_TYPES_LOCATION = 'lib/jsons/element_type_rule.json';
 
+// Crawler constants
+const FIRST_LINE_CSV = 'Entidade,Declaração,Conformidade,URL Correto?,Gerado Corretamente?,Entidade Original,Amostra\n';
+const FIRST_LINE_TXT_CSV = 'Entidade,Declaração,Conformidade,URL Correto?,Gerado Corretamente?\n';
+const FIRST_LINE_CSV_FAILED = 'URL,Mensagem Erro\n';
+const HEADLESS_PUPPETEER = true;
+
 export {DB_CONFIG, DB_CONFIG_PT, DB_CONFIG_TEST,
         COUNTRY_JSON, CONSTELLATIONS_JSON, PROTODATA_JSON,
         RULES_JSON, WCAG21_JSON, ELEMENT_TYPES,
+        FIRST_LINE_CSV, FIRST_LINE_TXT_CSV, FIRST_LINE_CSV_FAILED, HEADLESS_PUPPETEER,
         maxTextLength, emailRegex, twitterRegex, telephoneRegex, urlRegex, DB_NAMES,
         ELEMENT_TYPES_LOCATION};
