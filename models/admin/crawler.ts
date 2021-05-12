@@ -27,7 +27,7 @@ process.env.APIFY_LOCAL_STORAGE_DIR = "./apify_storage";
 let urls_filetype = 0; // filetype: 0 - txt, 1 - xlsx, -1 - manual
 const urls_filename = 'urls.txt';
 const sheet_names = ['Sheet1'];
-const manual_url = '';
+const manual_url = 'http://www.google.com';
 
 Apify.main(async () => {
   deleteFolderRecursive('./apify_storage');
