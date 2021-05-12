@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { HEADLESS_PUPPETEER, SHEET_NAMES } from '../../util/constants';
+import { HEADLESS_PUPPETEER } from '../../util/constants';
 import { IHashString } from '../../util/interfaces';
 import { deleteFolderRecursive, getDomainEntryFromURL, prepareCrawlerFiles } from '../../util/util';
 
@@ -24,10 +24,10 @@ process.env.APIFY_LOCAL_STORAGE_DIR = "./apify_storage";
    > used to crawl single URL
    > manually fill variable 'manual_url' below with desired URL 
 */
-let urls_filetype = 0; // filetype: 0 - txt, 1 - xlsx, -1 - manual
-const urls_filename = 'urls.txt';
-const sheet_names = ['Sheet1'];
-const manual_url = 'http://www.google.com';
+let urls_filetype = 1;
+const urls_filename = 'urls_crawler_2021.xlsx';
+const sheet_names = ['Amostra2015','EnsinoSuperior','Municipios','ONGs','Amostra2019'];
+const manual_url = '';
 
 Apify.main(async () => {
   deleteFolderRecursive('./apify_storage');
@@ -217,7 +217,7 @@ function prepareFileInput(domainMap: IHashString){
         A: 'entidade',
         B: 'url',
       },
-      sheets: SHEET_NAMES
+      sheets: sheet_names
     });
 
     // Navigate through all sheets
